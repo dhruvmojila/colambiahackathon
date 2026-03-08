@@ -3,7 +3,7 @@
 import { useRef, useEffect, useState, useCallback } from "react";
 import { VideoOff, Camera } from "lucide-react";
 
-export default function CameraFeed({ onFrame, active = false }) {
+export default function CameraFeed({ onFrame, onStreamReady, active = false }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
@@ -15,7 +15,7 @@ export default function CameraFeed({ onFrame, active = false }) {
 
   // Start camera
   const startCamera = useCallback(async () => {
-    if (streamRef.current) return; // already running
+    if (streamRef.current) return;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
@@ -37,6 +37,8 @@ export default function CameraFeed({ onFrame, active = false }) {
           if (mountedRef.current) {
             setHasCamera(true);
             setCameraReady(true);
+            // Expose stream to parent for video recording
+            onStreamReady?.(stream);
           }
         };
       }
@@ -47,7 +49,7 @@ export default function CameraFeed({ onFrame, active = false }) {
         setHasCamera(false);
       }
     }
-  }, []);
+  }, [onStreamReady]);
 
   // Stop camera
   const stopCamera = useCallback(() => {
@@ -63,7 +65,7 @@ export default function CameraFeed({ onFrame, active = false }) {
     setCameraReady(false);
   }, []);
 
-  // Start frame capture when active and camera ready
+  // Frame capture for Gemini vision
   useEffect(() => {
     if (!cameraReady || !active || !onFrame) {
       if (intervalRef.current) {
@@ -87,7 +89,7 @@ export default function CameraFeed({ onFrame, active = false }) {
         const base64 = dataUrl.split(",")[1];
         if (base64) onFrame(base64);
       }
-    }, 1500); // 1 frame every 1.5s
+    }, 1500);
 
     return () => {
       if (intervalRef.current) {
@@ -97,7 +99,7 @@ export default function CameraFeed({ onFrame, active = false }) {
     };
   }, [cameraReady, active, onFrame]);
 
-  // Lifecycle: start camera immediately for preview, stop on unmount
+  // Lifecycle
   useEffect(() => {
     mountedRef.current = true;
     startCamera();
@@ -122,7 +124,6 @@ export default function CameraFeed({ onFrame, active = false }) {
 
       <canvas ref={canvasRef} className="hidden" />
 
-      {/* Overlay when no camera */}
       {!hasCamera && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
           <div className="rounded-full bg-white/5 p-4">
@@ -146,7 +147,6 @@ export default function CameraFeed({ onFrame, active = false }) {
         </div>
       )}
 
-      {/* Live indicator */}
       {hasCamera && (
         <div className="absolute left-3 top-3 flex items-center gap-2 rounded-full bg-black/50 px-3 py-1 backdrop-blur-sm">
           <span className="relative flex h-2 w-2">
@@ -157,7 +157,6 @@ export default function CameraFeed({ onFrame, active = false }) {
         </div>
       )}
 
-      {/* Active scanning overlay */}
       {hasCamera && active && (
         <div className="pointer-events-none absolute inset-0">
           <div className="absolute left-4 top-4 h-8 w-8 border-l-2 border-t-2 border-cyan-400/50 rounded-tl-lg" />

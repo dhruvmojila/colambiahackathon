@@ -27,7 +27,7 @@ if (!existsSync(saPath)) {
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { type, data, language, sessionId = "default" } = body;
+    const { type, data, language, sessionId = "default", signContext } = body;
 
     // Initialize session
     if (type === "config") {
@@ -72,18 +72,21 @@ export async function POST(request) {
       const checkEnvironment =
         session.frameCount - session.lastEnvironmentCheck >= 5;
 
+      // Build context including sign-api detection if available
+      const previousContext =
+        session.messageHistory.length > 0
+          ? {
+              lastMessages: session.messageHistory.slice(-3),
+              environment: session.environment,
+              ...(signContext ? { signDetection: signContext } : {}),
+            }
+          : signContext
+            ? { signDetection: signContext }
+            : null;
+
       // Run interpretation and environment analysis in parallel
       const [interpretation, envResult] = await Promise.all([
-        analyzeFrame(
-          data,
-          session.language,
-          session.messageHistory.length > 0
-            ? {
-                lastMessages: session.messageHistory.slice(-3),
-                environment: session.environment,
-              }
-            : null,
-        ),
+        analyzeFrame(data, session.language, previousContext),
         checkEnvironment
           ? analyzeEnvironmentFromFrame(data)
           : Promise.resolve(null),

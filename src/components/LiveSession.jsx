@@ -20,6 +20,8 @@ import TranscriptPanel from "@/components/TranscriptPanel";
 import EnvironmentBadge from "@/components/EnvironmentBadge";
 import AudioVisualizer from "@/components/AudioVisualizer";
 import LanguageSelector from "@/components/LanguageSelector";
+import SignDetectionBadge from "@/components/SignDetectionBadge";
+import { captureAndPredict } from "@/lib/sign-api-client";
 
 export default function LiveSession() {
   const [messages, setMessages] = useState([]);
@@ -35,6 +37,8 @@ export default function LiveSession() {
   const [framesSent, setFramesSent] = useState(0);
   const [retryCount, setRetryCount] = useState(0);
   const [audioEnabled, setAudioEnabled] = useState(true);
+  const [signPrediction, setSignPrediction] = useState(null);
+  const [isDetecting, setIsDetecting] = useState(false);
 
   const sessionIdRef = useRef("session-" + Date.now());
   const processingRef = useRef(false);
@@ -43,38 +47,31 @@ export default function LiveSession() {
   const timerRef = useRef(null);
   const audioQueueRef = useRef([]);
   const isPlayingRef = useRef(false);
+  const streamRef = useRef(null);
+  const detectIntervalRef = useRef(null);
   const maxRetries = 3;
 
-  // Initialize AudioContext on first user interaction
+  // --- Audio context ---
   const ensureAudioContext = useCallback(() => {
     if (audioContextRef.current) return audioContextRef.current;
-
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const analyser = ctx.createAnalyser();
     analyser.fftSize = 64;
     analyser.smoothingTimeConstant = 0.8;
     analyser.connect(ctx.destination);
-
     audioContextRef.current = ctx;
     analyserRef.current = analyser;
-
     return ctx;
   }, []);
 
-  // Play base64-encoded MP3 audio
+  // --- Audio playback ---
   const playAudio = useCallback(
     async (base64Audio) => {
       if (!audioEnabled) return;
-
       try {
         const ctx = ensureAudioContext();
+        if (ctx.state === "suspended") await ctx.resume();
 
-        // Resume if suspended (browser policy)
-        if (ctx.state === "suspended") {
-          await ctx.resume();
-        }
-
-        // Decode base64 to ArrayBuffer
         const binaryStr = atob(base64Audio);
         const bytes = new Uint8Array(binaryStr.length);
         for (let i = 0; i < binaryStr.length; i++) {
@@ -82,8 +79,6 @@ export default function LiveSession() {
         }
 
         const audioBuffer = await ctx.decodeAudioData(bytes.buffer.slice(0));
-
-        // Create source and connect to analyser
         const source = ctx.createBufferSource();
         source.buffer = audioBuffer;
         source.connect(analyserRef.current);
@@ -94,7 +89,6 @@ export default function LiveSession() {
         source.onended = () => {
           setIsAudioPlaying(false);
           isPlayingRef.current = false;
-          // Play next in queue if any
           processAudioQueue();
         };
 
@@ -109,14 +103,11 @@ export default function LiveSession() {
     [audioEnabled, ensureAudioContext],
   );
 
-  // Queue-based audio playback to avoid overlapping
   const queueAudio = useCallback(
     (base64Audio) => {
       if (!audioEnabled) return;
       audioQueueRef.current.push(base64Audio);
-      if (!isPlayingRef.current) {
-        processAudioQueue();
-      }
+      if (!isPlayingRef.current) processAudioQueue();
     },
     [audioEnabled],
   );
@@ -127,13 +118,11 @@ export default function LiveSession() {
     playAudio(next);
   }, [playAudio]);
 
-  // Session timer
+  // --- Session timer ---
   useEffect(() => {
     if (sessionActive) {
       setElapsed(0);
-      timerRef.current = setInterval(() => {
-        setElapsed((e) => e + 1);
-      }, 1000);
+      timerRef.current = setInterval(() => setElapsed((e) => e + 1), 1000);
     } else {
       if (timerRef.current) clearInterval(timerRef.current);
     }
@@ -148,7 +137,66 @@ export default function LiveSession() {
     return `${m}:${sec.toString().padStart(2, "0")}`;
   };
 
-  // Send a frame to the backend for analysis
+  // --- Camera stream ready ---
+  const handleStreamReady = useCallback((stream) => {
+    streamRef.current = stream;
+  }, []);
+
+  // --- Sign-API detection loop (records 2s video → /predict) ---
+  useEffect(() => {
+    if (!sessionActive || !streamRef.current) {
+      if (detectIntervalRef.current) {
+        clearInterval(detectIntervalRef.current);
+        detectIntervalRef.current = null;
+      }
+      return;
+    }
+
+    const runDetection = async () => {
+      if (isDetecting || !streamRef.current) return;
+      setIsDetecting(true);
+
+      try {
+        const prediction = await captureAndPredict(streamRef.current, 2000);
+        setSignPrediction(prediction);
+
+        // If we got a sign detection, add it as context to the Gemini pipeline
+        if (prediction && prediction.intent && prediction.confidence > 0.3) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: "user",
+              text: `[ASL Sign: "${prediction.intent}" (${Math.round(prediction.confidence * 100)}% confidence)]`,
+              emotion: "neutral",
+              timestamp: Date.now(),
+              isDetection: true,
+            },
+          ]);
+        }
+      } catch (err) {
+        console.error("Sign detection error:", err.message);
+        // Don't show error banner for sign-api issues — it's supplementary
+      } finally {
+        setIsDetecting(false);
+      }
+    };
+
+    // First detection after a small delay
+    const timeout = setTimeout(runDetection, 1000);
+
+    // Then every 3.5s (2s recording + 1.5s gap)
+    detectIntervalRef.current = setInterval(runDetection, 3500);
+
+    return () => {
+      clearTimeout(timeout);
+      if (detectIntervalRef.current) {
+        clearInterval(detectIntervalRef.current);
+        detectIntervalRef.current = null;
+      }
+    };
+  }, [sessionActive, isDetecting]);
+
+  // --- Gemini frame analysis (existing pipeline) ---
   const handleFrame = useCallback(
     async (base64Frame) => {
       if (!sessionActive || processingRef.current) return;
@@ -161,6 +209,11 @@ export default function LiveSession() {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 30000);
 
+        // Include sign detection context if available
+        const signContext = signPrediction
+          ? `Detected ASL sign: "${signPrediction.intent}" (${Math.round(signPrediction.confidence * 100)}% confidence)`
+          : null;
+
         const res = await fetch("/api/live", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -169,6 +222,7 @@ export default function LiveSession() {
             data: base64Frame,
             language,
             sessionId: sessionIdRef.current,
+            signContext,
           }),
           signal: controller.signal,
         });
@@ -219,11 +273,10 @@ export default function LiveSession() {
         }
 
         setRetryCount((c) => c + 1);
-
         if (retryCount >= maxRetries) {
           setStatusText("Too many errors — pausing");
           setError(
-            "Multiple failures. Check API credentials and that Vertex AI + Text-to-Speech APIs are enabled.",
+            "Multiple failures. Check API credentials and enabled APIs.",
           );
         } else {
           setStatusText("Error — will retry…");
@@ -233,10 +286,10 @@ export default function LiveSession() {
         setIsProcessing(false);
       }
     },
-    [sessionActive, language, retryCount, queueAudio],
+    [sessionActive, language, retryCount, queueAudio, signPrediction],
   );
 
-  // Start session
+  // --- Session controls ---
   const startSession = useCallback(async () => {
     sessionIdRef.current = "session-" + Date.now();
     setMessages([]);
@@ -244,9 +297,8 @@ export default function LiveSession() {
     setError(null);
     setFramesSent(0);
     setRetryCount(0);
+    setSignPrediction(null);
     audioQueueRef.current = [];
-
-    // Initialize audio context on user gesture
     ensureAudioContext();
 
     try {
@@ -268,25 +320,19 @@ export default function LiveSession() {
         throw new Error("Failed to initialize session");
       }
     } catch (err) {
-      setError(err.message || "Connection failed. Is the server running?");
+      setError(err.message || "Connection failed");
       setStatusText("Connection failed");
     }
   }, [language, ensureAudioContext]);
 
-  // End session
   const endSession = useCallback(async () => {
     try {
       await fetch("/api/live", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type: "end",
-          sessionId: sessionIdRef.current,
-        }),
+        body: JSON.stringify({ type: "end", sessionId: sessionIdRef.current }),
       });
-    } catch {
-      // ignore cleanup errors
-    }
+    } catch {}
     setIsConnected(false);
     setSessionActive(false);
     setStatusText("Session ended");
@@ -294,34 +340,24 @@ export default function LiveSession() {
     processingRef.current = false;
     audioQueueRef.current = [];
     setIsAudioPlaying(false);
+    setSignPrediction(null);
   }, []);
 
-  // Toggle session
   const toggleSession = useCallback(() => {
-    if (sessionActive) {
-      endSession();
-    } else {
-      startSession();
-    }
+    if (sessionActive) endSession();
+    else startSession();
   }, [sessionActive, startSession, endSession]);
 
-  // Clear transcript
-  const clearTranscript = useCallback(() => {
-    setMessages([]);
-  }, []);
-
-  // Dismiss error
+  const clearTranscript = useCallback(() => setMessages([]), []);
   const dismissError = useCallback(() => {
     setError(null);
     setRetryCount(0);
   }, []);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (audioContextRef.current) {
+      if (audioContextRef.current)
         audioContextRef.current.close().catch(() => {});
-      }
     };
   }, []);
 
@@ -346,7 +382,6 @@ export default function LiveSession() {
         </div>
 
         <div className="ml-auto flex items-center gap-3">
-          {/* Session timer */}
           {sessionActive && (
             <div className="flex items-center gap-1.5 rounded-full bg-white/5 px-2.5 py-1">
               <Clock className="h-3 w-3 text-white/40" />
@@ -360,7 +395,6 @@ export default function LiveSession() {
             </div>
           )}
 
-          {/* Audio toggle */}
           <button
             onClick={() => setAudioEnabled((v) => !v)}
             className={`flex items-center gap-1 rounded-full px-2 py-1 transition ${
@@ -380,7 +414,6 @@ export default function LiveSession() {
             </span>
           </button>
 
-          {/* Connection status */}
           <div className="flex items-center gap-1.5">
             {isConnected ? (
               <Wifi className="h-3.5 w-3.5 text-emerald-400" />
@@ -396,7 +429,6 @@ export default function LiveSession() {
             </span>
           </div>
 
-          {/* Processing indicator */}
           {isProcessing && (
             <div className="flex items-center gap-1.5">
               <Zap className="h-3.5 w-3.5 animate-pulse text-yellow-400" />
@@ -404,7 +436,6 @@ export default function LiveSession() {
             </div>
           )}
 
-          {/* Status text when idle */}
           {!isProcessing && sessionActive && (
             <span className="text-[10px] text-cyan-300/60">{statusText}</span>
           )}
@@ -429,16 +460,22 @@ export default function LiveSession() {
       <div className="flex flex-1 gap-4 overflow-hidden p-4 md:p-6">
         {/* Left: Camera + controls */}
         <div className="flex w-full flex-col gap-3 md:w-1/2 lg:w-[45%]">
-          {/* Camera feed */}
           <div className="glow-border rounded-2xl">
-            <CameraFeed onFrame={handleFrame} active={sessionActive} />
+            <CameraFeed
+              onFrame={handleFrame}
+              onStreamReady={handleStreamReady}
+              active={sessionActive}
+            />
           </div>
 
-          {/* Controls row */}
+          {/* Controls row: language + environment */}
           <div className="grid grid-cols-2 gap-3">
             <LanguageSelector value={language} onChange={setLanguage} />
             <EnvironmentBadge environment={environment} />
           </div>
+
+          {/* Sign detection result */}
+          <SignDetectionBadge prediction={signPrediction} />
 
           {/* Audio visualizer */}
           <AudioVisualizer
@@ -469,7 +506,6 @@ export default function LiveSession() {
               )}
             </button>
 
-            {/* Clear transcript */}
             {messages.length > 0 && (
               <button
                 onClick={clearTranscript}
@@ -488,7 +524,7 @@ export default function LiveSession() {
         </div>
       </div>
 
-      {/* Mobile transcript (bottom sheet style) */}
+      {/* Mobile transcript */}
       <div className="flex-1 overflow-hidden px-4 pb-4 md:hidden">
         <TranscriptPanel messages={messages} />
       </div>

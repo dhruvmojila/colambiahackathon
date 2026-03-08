@@ -43,3 +43,4 @@ sign-api/venv
 # sign-api
 
 service-account.json
+NEXTJS_INTEGRATION.md
