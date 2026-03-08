@@ -38,10 +38,10 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
 # Copy service account file
-COPY --chown=nextjs:nodejs service-account.json ./service-account.json
+# COPY --chown=nextjs:nodejs service-account.json ./service-account.json
 
 # Set service account env
-ENV GOOGLE_APPLICATION_CREDENTIALS="./service-account.json"
+# ENV GOOGLE_APPLICATION_CREDENTIALS="./service-account.json"
 
 USER nextjs
 

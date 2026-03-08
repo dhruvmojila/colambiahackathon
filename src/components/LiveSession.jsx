@@ -39,6 +39,7 @@ export default function LiveSession() {
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [signPrediction, setSignPrediction] = useState(null);
   const [isDetecting, setIsDetecting] = useState(false);
+  const [faceEmotion, setFaceEmotion] = useState("neutral");
 
   const sessionIdRef = useRef("session-" + Date.now());
   const processingRef = useRef(false);
@@ -223,6 +224,7 @@ export default function LiveSession() {
             language,
             sessionId: sessionIdRef.current,
             signContext,
+            faceEmotion,
           }),
           signal: controller.signal,
         });
@@ -286,7 +288,14 @@ export default function LiveSession() {
         setIsProcessing(false);
       }
     },
-    [sessionActive, language, retryCount, queueAudio, signPrediction],
+    [
+      sessionActive,
+      language,
+      retryCount,
+      queueAudio,
+      signPrediction,
+      faceEmotion,
+    ],
   );
 
   // --- Session controls ---
@@ -464,6 +473,7 @@ export default function LiveSession() {
             <CameraFeed
               onFrame={handleFrame}
               onStreamReady={handleStreamReady}
+              onEmotionChange={setFaceEmotion}
               active={sessionActive}
             />
           </div>

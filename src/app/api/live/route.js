@@ -27,7 +27,14 @@ if (!existsSync(saPath)) {
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { type, data, language, sessionId = "default", signContext } = body;
+    const {
+      type,
+      data,
+      language,
+      sessionId = "default",
+      signContext,
+      faceEmotion,
+    } = body;
 
     // Initialize session
     if (type === "config") {
@@ -72,16 +79,24 @@ export async function POST(request) {
       const checkEnvironment =
         session.frameCount - session.lastEnvironmentCheck >= 5;
 
-      // Build context including sign-api detection if available
+      // Build context including sign-api detection and face emotion if available
       const previousContext =
         session.messageHistory.length > 0
           ? {
               lastMessages: session.messageHistory.slice(-3),
               environment: session.environment,
               ...(signContext ? { signDetection: signContext } : {}),
+              ...(faceEmotion && faceEmotion !== "neutral"
+                ? { faceEmotion }
+                : {}),
             }
-          : signContext
-            ? { signDetection: signContext }
+          : signContext || (faceEmotion && faceEmotion !== "neutral")
+            ? {
+                ...(signContext ? { signDetection: signContext } : {}),
+                ...(faceEmotion && faceEmotion !== "neutral"
+                  ? { faceEmotion }
+                  : {}),
+              }
             : null;
 
       // Run interpretation and environment analysis in parallel

@@ -40,7 +40,7 @@ gcloud run deploy $SERVICE_NAME `
     --min-instances 0 `
     --max-instances 5 `
     --timeout 300 `
-    --set-env-vars "NODE_ENV=production,GOOGLE_APPLICATION_CREDENTIALS=./service-account.json,GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_CLOUD_LOCATION=$REGION" `
+    --set-env-vars "NODE_ENV=production,GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_CLOUD_LOCATION=$REGION" `
     --quiet
 
 # Step 4: Get the URL

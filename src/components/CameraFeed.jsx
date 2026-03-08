@@ -2,8 +2,15 @@
 
 import { useRef, useEffect, useState, useCallback } from "react";
 import { VideoOff, Camera } from "lucide-react";
+import MediaPipeOverlay from "@/components/MediaPipeOverlay";
+import { useMediaPipeDetection } from "@/hooks/useMediaPipeDetection";
 
-export default function CameraFeed({ onFrame, onStreamReady, active = false }) {
+export default function CameraFeed({
+  onFrame,
+  onStreamReady,
+  onEmotionChange,
+  active = false,
+}) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
@@ -12,6 +19,20 @@ export default function CameraFeed({ onFrame, onStreamReady, active = false }) {
   const [hasCamera, setHasCamera] = useState(false);
   const [error, setError] = useState(null);
   const [cameraReady, setCameraReady] = useState(false);
+  const [videoEl, setVideoEl] = useState(null);
+
+  // MediaPipe detection — only runs when camera is ready and session active
+  const { hands, faceEmotion, isLoaded } = useMediaPipeDetection(
+    videoEl,
+    cameraReady && active,
+  );
+
+  // Propagate detected emotion to parent
+  useEffect(() => {
+    if (faceEmotion && onEmotionChange) {
+      onEmotionChange(faceEmotion);
+    }
+  }, [faceEmotion, onEmotionChange]);
 
   // Start camera
   const startCamera = useCallback(async () => {
@@ -37,7 +58,7 @@ export default function CameraFeed({ onFrame, onStreamReady, active = false }) {
           if (mountedRef.current) {
             setHasCamera(true);
             setCameraReady(true);
-            // Expose stream to parent for video recording
+            setVideoEl(videoRef.current);
             onStreamReady?.(stream);
           }
         };
@@ -63,9 +84,10 @@ export default function CameraFeed({ onFrame, onStreamReady, active = false }) {
     }
     setHasCamera(false);
     setCameraReady(false);
+    setVideoEl(null);
   }, []);
 
-  // Frame capture for Gemini vision
+  // Frame capture for Gemini vision (unchanged)
   useEffect(() => {
     if (!cameraReady || !active || !onFrame) {
       if (intervalRef.current) {
@@ -122,6 +144,15 @@ export default function CameraFeed({ onFrame, onStreamReady, active = false }) {
         style={{ transform: "scaleX(-1)" }}
       />
 
+      {/* MediaPipe canvas overlay — draws hands + face emotion */}
+      {hasCamera && active && (
+        <MediaPipeOverlay
+          hands={hands}
+          faceEmotion={faceEmotion}
+          isLoaded={isLoaded}
+        />
+      )}
+
       <canvas ref={canvasRef} className="hidden" />
 
       {!hasCamera && (
@@ -148,23 +179,33 @@ export default function CameraFeed({ onFrame, onStreamReady, active = false }) {
       )}
 
       {hasCamera && (
-        <div className="absolute left-3 top-3 flex items-center gap-2 rounded-full bg-black/50 px-3 py-1 backdrop-blur-sm">
+        <div className="absolute left-3 top-3 z-20 flex items-center gap-2 rounded-full bg-black/50 px-3 py-1 backdrop-blur-sm">
           <span className="relative flex h-2 w-2">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
             <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
           </span>
           <span className="text-xs text-white/70">Live</span>
+          {active && isLoaded && (
+            <>
+              <span className="text-[9px] text-white/25">•</span>
+              <span className="text-[10px] text-violet-300">MediaPipe</span>
+            </>
+          )}
         </div>
       )}
 
       {hasCamera && active && (
-        <div className="pointer-events-none absolute inset-0">
+        <div className="pointer-events-none absolute inset-0 z-20">
           <div className="absolute left-4 top-4 h-8 w-8 border-l-2 border-t-2 border-cyan-400/50 rounded-tl-lg" />
           <div className="absolute right-4 top-4 h-8 w-8 border-r-2 border-t-2 border-cyan-400/50 rounded-tr-lg" />
           <div className="absolute bottom-4 left-4 h-8 w-8 border-b-2 border-l-2 border-cyan-400/50 rounded-bl-lg" />
           <div className="absolute bottom-4 right-4 h-8 w-8 border-b-2 border-r-2 border-cyan-400/50 rounded-br-lg" />
           <div className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-black/50 px-3 py-1 backdrop-blur-sm">
-            <span className="text-[10px] text-cyan-300">Analyzing signs…</span>
+            <span className="text-[10px] text-cyan-300">
+              {hands.length > 0
+                ? `${hands.length} hand${hands.length > 1 ? "s" : ""} detected`
+                : "Analyzing signs…"}
+            </span>
           </div>
         </div>
       )}

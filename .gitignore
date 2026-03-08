@@ -42,5 +42,5 @@ next-env.d.ts
 sign-api/venv
 # sign-api
 
-service-account.json
+# service-account.json
 NEXTJS_INTEGRATION.md
