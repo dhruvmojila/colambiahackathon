@@ -285,7 +285,7 @@ app = FastAPI(title="SignPulse AI Backend", version="2.0.0", lifespan=lifespan)
 # ──────────────────────────────────────────────
 ALLOWED_ORIGINS = os.environ.get(
     "ALLOWED_ORIGINS",
-    "http://localhost:3000,http://localhost:3001"
+    "http://localhost:3000,http://localhost:3001,https://signpulse-backend-973006952011.us-central1.run.app,https://signpulse-ai-om4pzzzkja-uc.a.run.app"
 ).split(",")
 
 app.add_middleware(
