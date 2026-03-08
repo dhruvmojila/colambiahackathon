@@ -3,13 +3,25 @@
  *
  * POST /api/live
  * Accepts video frames, returns sign interpretation, environment, and audio.
- * Uses Server-Sent Events for streaming responses.
  */
 import { NextResponse } from "next/server";
 import { analyzeFrame, analyzeEnvironmentFromFrame } from "@/lib/gemini-live";
+import { existsSync } from "fs";
+import { resolve } from "path";
 
 // In-memory session state (per user session)
 const sessions = new Map();
+
+// Validate service account on cold start
+const saPath = resolve(
+  process.cwd(),
+  process.env.GOOGLE_APPLICATION_CREDENTIALS || "service-account.json",
+);
+if (!existsSync(saPath)) {
+  console.warn(
+    `⚠️  Service account not found at ${saPath}. API calls will fail.`,
+  );
+}
 
 export async function POST(request) {
   try {
@@ -139,9 +151,35 @@ export async function POST(request) {
     );
   } catch (error) {
     console.error("Live API error:", error);
+
+    let userMessage = error.message || "Internal server error";
+    let status = 500;
+
+    if (
+      error.message?.includes("PERMISSION_DENIED") ||
+      error.message?.includes("403")
+    ) {
+      userMessage =
+        "Service account lacks permissions. Enable Vertex AI API in your GCP project.";
+      status = 403;
+    } else if (
+      error.message?.includes("RESOURCE_EXHAUSTED") ||
+      error.message?.includes("429")
+    ) {
+      userMessage = "API quota exceeded. Please wait a moment and try again.";
+      status = 429;
+    } else if (
+      error.message?.includes("NOT_FOUND") ||
+      error.message?.includes("404")
+    ) {
+      userMessage =
+        "Model not found. Check that Vertex AI is enabled in your GCP project.";
+      status = 404;
+    }
+
     return NextResponse.json(
-      { error: "Internal server error", details: error.message },
-      { status: 500 },
+      { error: userMessage, details: error.message },
+      { status },
     );
   }
 }
