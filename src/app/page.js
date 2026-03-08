@@ -65,34 +65,34 @@ export default function Home() {
         </nav>
 
         {/* Hero */}
-        <main className="flex flex-1 flex-col items-center justify-center px-6 text-center">
+        <main className="flex flex-1 flex-col items-center justify-center px-5 text-center md:px-6">
           <div className="animate-fade-in-up opacity-0">
-            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs text-white/70 backdrop-blur-sm">
-              <Sparkles className="h-3.5 w-3.5 text-violet-400" />
-              Powered by Google ADK & Gemini
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] text-white/70 backdrop-blur-sm md:px-4 md:py-1.5 md:text-xs">
+              <Sparkles className="h-3 w-3 text-violet-400 md:h-3.5 md:w-3.5" />
+              Powered by Google ADK &amp; Gemini
             </div>
           </div>
 
-          <h1 className="animate-fade-in-up opacity-0 delay-100 max-w-3xl text-5xl font-extrabold leading-tight tracking-tight text-white md:text-7xl">
+          <h1 className="animate-fade-in-up opacity-0 delay-100 max-w-3xl text-4xl font-extrabold leading-tight tracking-tight text-white sm:text-5xl md:text-7xl">
             Give Every Sign <span className="glow-text">a Voice</span>
           </h1>
 
-          <p className="animate-fade-in-up opacity-0 delay-200 mt-6 max-w-xl text-lg leading-relaxed text-white/55 md:text-xl">
+          <p className="animate-fade-in-up opacity-0 delay-200 mt-4 max-w-xl text-base leading-relaxed text-white/55 md:mt-6 md:text-xl">
             Real-time, context-aware sign language translation with emotive
             speech. Your camera becomes a conversational partner.
           </p>
 
-          <div className="animate-fade-in-up opacity-0 delay-300 mt-10 flex flex-col items-center gap-4 sm:flex-row">
+          <div className="animate-fade-in-up opacity-0 delay-300 mt-8 flex flex-col items-center gap-3 sm:flex-row md:mt-10 md:gap-4">
             <Link
               href="/session"
-              className="group flex items-center gap-2 rounded-full bg-gradient-to-r from-violet-600 to-cyan-500 px-8 py-3.5 text-sm font-semibold text-white shadow-lg shadow-violet-500/25 transition-all hover:shadow-xl hover:shadow-violet-500/35 hover:scale-105"
+              className="group flex items-center gap-2 rounded-full bg-gradient-to-r from-violet-600 to-cyan-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-violet-500/25 transition-all hover:shadow-xl hover:shadow-violet-500/35 hover:scale-105 md:px-8 md:py-3.5"
             >
               Start Translating
               <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
             </Link>
             <a
               href="#features"
-              className="rounded-full border border-white/15 px-8 py-3.5 text-sm font-medium text-white/70 backdrop-blur-sm transition hover:bg-white/5 hover:text-white"
+              className="rounded-full border border-white/15 px-6 py-3 text-sm font-medium text-white/70 backdrop-blur-sm transition hover:bg-white/5 hover:text-white md:px-8 md:py-3.5"
             >
               Learn More
             </a>

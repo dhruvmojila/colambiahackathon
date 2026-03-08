@@ -2,10 +2,10 @@
 
 /**
  * SignPulse AI — Sign detection result overlay.
- * Shows the detected sign, confidence, and top alternatives.
+ * Shows the detected ASL sign, confidence, and top alternatives.
  */
 
-import { Hand, TrendingUp, AlertTriangle } from "lucide-react";
+import { Hand, TrendingUp } from "lucide-react";
 
 export default function SignDetectionBadge({ prediction }) {
   if (!prediction) {
@@ -17,7 +17,7 @@ export default function SignDetectionBadge({ prediction }) {
     );
   }
 
-  const { intent, confidence, top5, demo_mode } = prediction;
+  const { intent, confidence, top5 } = prediction;
   const confPercent = Math.round(confidence * 100);
 
   const confColor =
@@ -64,14 +64,6 @@ export default function SignDetectionBadge({ prediction }) {
           </div>
         </div>
       </div>
-
-      {/* Demo mode badge */}
-      {demo_mode && (
-        <div className="flex items-center gap-1.5 rounded-md bg-yellow-500/10 px-2 py-1">
-          <AlertTriangle className="h-3 w-3 text-yellow-400" />
-          <span className="text-[10px] text-yellow-300">Demo mode</span>
-        </div>
-      )}
 
       {/* Top alternatives */}
       {top5 && top5.length > 1 && (
