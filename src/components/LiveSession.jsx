@@ -2,15 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import Link from "next/link";
-import {
-  Activity,
-  ArrowLeft,
-  Wifi,
-  WifiOff,
-  Hand,
-  Settings,
-  Zap,
-} from "lucide-react";
+import { Activity, ArrowLeft, Wifi, WifiOff, Hand, Zap } from "lucide-react";
 import CameraFeed from "@/components/CameraFeed";
 import TranscriptPanel from "@/components/TranscriptPanel";
 import EnvironmentBadge from "@/components/EnvironmentBadge";
@@ -25,139 +17,122 @@ export default function LiveSession() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const [sessionActive, setSessionActive] = useState(false);
-  const wsRef = useRef(null);
-  const audioContextRef = useRef(null);
+  const [statusText, setStatusText] = useState("Ready");
+  const sessionIdRef = useRef("session-" + Date.now());
+  const processingRef = useRef(false);
   const analyserRef = useRef(null);
 
-  // Connect to our backend WebSocket proxy
-  const connectWebSocket = useCallback(() => {
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const ws = new WebSocket(`${protocol}//${window.location.host}/api/live`);
+  // Send a frame to the backend for analysis
+  const handleFrame = useCallback(
+    async (base64Frame) => {
+      if (!sessionActive || processingRef.current) return;
+      processingRef.current = true;
+      setIsProcessing(true);
+      setStatusText("Analyzing…");
 
-    ws.onopen = () => {
-      setIsConnected(true);
-      // Send initial config
-      ws.send(
-        JSON.stringify({
+      try {
+        const res = await fetch("/api/live", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type: "frame",
+            data: base64Frame,
+            language,
+            sessionId: sessionIdRef.current,
+          }),
+        });
+
+        if (!res.ok) {
+          throw new Error(`API error: ${res.status}`);
+        }
+
+        const data = await res.json();
+
+        if (data.results) {
+          for (const result of data.results) {
+            if (result.type === "transcript") {
+              setMessages((prev) => [
+                ...prev,
+                {
+                  role: result.role,
+                  text: result.text,
+                  emotion: result.emotion,
+                },
+              ]);
+            }
+            if (result.type === "environment") {
+              setEnvironment(result.environment);
+            }
+          }
+        }
+
+        setStatusText("Listening…");
+      } catch (err) {
+        console.error("Frame analysis error:", err);
+        setStatusText("Error — retrying…");
+      } finally {
+        processingRef.current = false;
+        setIsProcessing(false);
+      }
+    },
+    [sessionActive, language],
+  );
+
+  // Start session
+  const startSession = useCallback(async () => {
+    sessionIdRef.current = "session-" + Date.now();
+    setMessages([]);
+    setEnvironment(null);
+
+    try {
+      const res = await fetch("/api/live", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           type: "config",
           language,
+          sessionId: sessionIdRef.current,
         }),
-      );
-    };
+      });
 
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-
-        if (data.type === "transcript") {
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: data.role,
-              text: data.text,
-              emotion: data.emotion,
-            },
-          ]);
-          setIsProcessing(false);
-        }
-
-        if (data.type === "environment") {
-          setEnvironment(data.environment);
-        }
-
-        if (data.type === "audio") {
-          playAudio(data.audioData);
-        }
-
-        if (data.type === "processing") {
-          setIsProcessing(data.active);
-        }
-      } catch {
-        // ignore parse errors
+      if (res.ok) {
+        setIsConnected(true);
+        setSessionActive(true);
+        setStatusText("Connected — start signing!");
       }
-    };
-
-    ws.onclose = () => {
-      setIsConnected(false);
-    };
-
-    ws.onerror = () => {
-      setIsConnected(false);
-    };
-
-    wsRef.current = ws;
+    } catch {
+      setStatusText("Connection failed");
+    }
   }, [language]);
 
-  const disconnectWebSocket = useCallback(() => {
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
+  // End session
+  const endSession = useCallback(async () => {
+    try {
+      await fetch("/api/live", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "end",
+          sessionId: sessionIdRef.current,
+        }),
+      });
+    } catch {
+      // ignore
     }
     setIsConnected(false);
-  }, []);
-
-  // Send camera frames to backend
-  const handleFrame = useCallback((base64Frame) => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(
-        JSON.stringify({
-          type: "frame",
-          data: base64Frame,
-        }),
-      );
-    }
-  }, []);
-
-  // Play emotive audio from backend
-  const playAudio = useCallback(async (base64Audio) => {
-    try {
-      if (!audioContextRef.current) {
-        audioContextRef.current = new (
-          window.AudioContext || window.webkitAudioContext
-        )();
-        analyserRef.current = audioContextRef.current.createAnalyser();
-        analyserRef.current.fftSize = 64;
-      }
-
-      const audioData = Uint8Array.from(atob(base64Audio), (c) =>
-        c.charCodeAt(0),
-      );
-      const audioBuffer = await audioContextRef.current.decodeAudioData(
-        audioData.buffer,
-      );
-      const source = audioContextRef.current.createBufferSource();
-      source.buffer = audioBuffer;
-      source.connect(analyserRef.current);
-      analyserRef.current.connect(audioContextRef.current.destination);
-
-      setIsAudioPlaying(true);
-      source.onended = () => setIsAudioPlaying(false);
-      source.start();
-    } catch {
-      setIsAudioPlaying(false);
-    }
+    setSessionActive(false);
+    setStatusText("Session ended");
+    processingRef.current = false;
   }, []);
 
   // Toggle session
   const toggleSession = useCallback(() => {
     if (sessionActive) {
-      disconnectWebSocket();
-      setSessionActive(false);
+      endSession();
     } else {
-      connectWebSocket();
-      setSessionActive(true);
+      startSession();
     }
-  }, [sessionActive, connectWebSocket, disconnectWebSocket]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      disconnectWebSocket();
-      if (audioContextRef.current) {
-        audioContextRef.current.close();
-      }
-    };
-  }, [disconnectWebSocket]);
+  }, [sessionActive, startSession, endSession]);
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-[#0a0a18]">
@@ -200,8 +175,13 @@ export default function LiveSession() {
           {isProcessing && (
             <div className="flex items-center gap-1.5">
               <Zap className="h-3.5 w-3.5 animate-pulse text-yellow-400" />
-              <span className="text-[10px] text-yellow-300">Processing…</span>
+              <span className="text-[10px] text-yellow-300">{statusText}</span>
             </div>
+          )}
+
+          {/* Status text when not processing */}
+          {!isProcessing && sessionActive && (
+            <span className="text-[10px] text-cyan-300/60">{statusText}</span>
           )}
         </div>
       </header>
