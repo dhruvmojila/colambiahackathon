@@ -405,7 +405,7 @@ export default function LiveSession() {
 
       {/* ===== MAIN LAYOUT ===== */}
       {/* Desktop: side-by-side | Mobile: scrollable column */}
-      <div className="flex flex-1 overflow-hidden md:flex-row md:gap-4 md:p-6">
+      <div className="flex flex-1 flex-col overflow-hidden md:flex-row md:gap-4 md:p-6">
         {/* ---- LEFT COLUMN: Camera + controls ---- */}
         <div className="flex flex-col md:w-1/2 lg:w-[45%] md:shrink-0">
           {/* Camera with emoji overlay */}
