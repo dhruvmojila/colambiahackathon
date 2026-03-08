@@ -21,7 +21,7 @@ Start editing the page by modifying `app/page.js`; it updates automatically.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to optimize and load [Geist](https://vercel.com/font) font from Vercel.
 
-## Team Members
+## Team Members and Contributors
 
 - Monika Dineshbhbai Patel
 - Rudriben PatanjaliKumar Trivedi
