@@ -29,38 +29,38 @@ function getClient() {
 
 /**
  * Language → voice config mapping.
- * Each entry has a languageCode, voice name, and SSML gender.
+ * Using Standard voices (guaranteed to exist in all projects).
  */
 const VOICE_MAP = {
-  en: { languageCode: "en-US", name: "en-US-Journey-F", gender: "FEMALE" },
-  es: { languageCode: "es-ES", name: "es-ES-Wavenet-C", gender: "FEMALE" },
-  fr: { languageCode: "fr-FR", name: "fr-FR-Wavenet-C", gender: "FEMALE" },
-  de: { languageCode: "de-DE", name: "de-DE-Wavenet-C", gender: "FEMALE" },
-  ja: { languageCode: "ja-JP", name: "ja-JP-Wavenet-B", gender: "FEMALE" },
-  ko: { languageCode: "ko-KR", name: "ko-KR-Wavenet-A", gender: "FEMALE" },
-  zh: { languageCode: "cmn-CN", name: "cmn-CN-Wavenet-A", gender: "FEMALE" },
-  hi: { languageCode: "hi-IN", name: "hi-IN-Wavenet-A", gender: "FEMALE" },
-  ar: { languageCode: "ar-XA", name: "ar-XA-Wavenet-A", gender: "FEMALE" },
-  pt: { languageCode: "pt-BR", name: "pt-BR-Wavenet-A", gender: "FEMALE" },
-  ru: { languageCode: "ru-RU", name: "ru-RU-Wavenet-C", gender: "FEMALE" },
-  it: { languageCode: "it-IT", name: "it-IT-Wavenet-A", gender: "FEMALE" },
+  en: { languageCode: "en-US", ssmlGender: "FEMALE" },
+  es: { languageCode: "es-ES", ssmlGender: "FEMALE" },
+  fr: { languageCode: "fr-FR", ssmlGender: "FEMALE" },
+  de: { languageCode: "de-DE", ssmlGender: "FEMALE" },
+  ja: { languageCode: "ja-JP", ssmlGender: "FEMALE" },
+  ko: { languageCode: "ko-KR", ssmlGender: "FEMALE" },
+  zh: { languageCode: "cmn-CN", ssmlGender: "FEMALE" },
+  hi: { languageCode: "hi-IN", ssmlGender: "FEMALE" },
+  ar: { languageCode: "ar-XA", ssmlGender: "FEMALE" },
+  pt: { languageCode: "pt-BR", ssmlGender: "FEMALE" },
+  ru: { languageCode: "ru-RU", ssmlGender: "FEMALE" },
+  it: { languageCode: "it-IT", ssmlGender: "FEMALE" },
 };
 
 /**
- * Map emotion to SSML speaking rate and pitch adjustments.
+ * Map emotion to speaking rate and pitch.
  */
 function getEmotionParams(emotion) {
   const map = {
-    neutral: { rate: 1.0, pitch: 0 },
-    happy: { rate: 1.15, pitch: 2.0 },
-    excited: { rate: 1.25, pitch: 3.0 },
-    sad: { rate: 0.85, pitch: -3.0 },
-    concerned: { rate: 0.9, pitch: -1.0 },
-    urgent: { rate: 1.3, pitch: 1.5 },
-    angry: { rate: 1.1, pitch: -2.0 },
-    confused: { rate: 0.9, pitch: 1.0 },
-    calm: { rate: 0.85, pitch: -1.5 },
-    surprised: { rate: 1.2, pitch: 4.0 },
+    neutral: { speakingRate: 1.0, pitch: 0 },
+    happy: { speakingRate: 1.1, pitch: 2.0 },
+    excited: { speakingRate: 1.2, pitch: 3.0 },
+    sad: { speakingRate: 0.85, pitch: -3.0 },
+    concerned: { speakingRate: 0.9, pitch: -1.0 },
+    urgent: { speakingRate: 1.3, pitch: 1.5 },
+    angry: { speakingRate: 1.1, pitch: -2.0 },
+    confused: { speakingRate: 0.9, pitch: 1.0 },
+    calm: { speakingRate: 0.85, pitch: -1.5 },
+    surprised: { speakingRate: 1.15, pitch: 4.0 },
   };
   return map[emotion?.toLowerCase()] || map.neutral;
 }
@@ -80,89 +80,56 @@ export async function generateSpeech(
 ) {
   if (!text || text.trim().length === 0) return null;
 
+  // Clean the text — remove JSON artifacts, markdown, etc.
+  let cleanText = text
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/\{[\s\S]*?\}/g, "")
+    .replace(/[*_#]/g, "")
+    .trim();
+
+  if (cleanText.length === 0) return null;
+  if (cleanText.length > 500) cleanText = cleanText.substring(0, 500);
+
   try {
     const client = getClient();
     const voiceConfig = VOICE_MAP[language] || VOICE_MAP.en;
     const emotionParams = getEmotionParams(emotion);
 
-    // Build SSML for emotive speech
-    const ssml = `<speak>
-  <prosody rate="${emotionParams.rate}" pitch="${emotionParams.pitch >= 0 ? "+" : ""}${emotionParams.pitch}st">
-    ${escapeXml(text)}
-  </prosody>
-</speak>`;
-
-    const [response] = await client.synthesizeSpeech({
-      input: { ssml },
+    const request = {
+      input: { text: cleanText },
       voice: {
         languageCode: voiceConfig.languageCode,
-        name: voiceConfig.name,
-        ssmlGender: voiceConfig.gender,
+        ssmlGender: voiceConfig.ssmlGender,
       },
       audioConfig: {
         audioEncoding: "MP3",
-        speakingRate: 1.0, // Handled in SSML prosody
-        pitch: 0, // Handled in SSML prosody
-        volumeGainDb: 0,
-        effectsProfileId: ["small-bluetooth-speaker-class-device"],
+        speakingRate: emotionParams.speakingRate,
+        pitch: emotionParams.pitch,
       },
-    });
+    };
+
+    console.log(
+      `[TTS] Generating speech: lang=${language}, emotion=${emotion}, text="${cleanText.substring(0, 60)}..."`,
+    );
+
+    const [response] = await client.synthesizeSpeech(request);
 
     if (response.audioContent) {
-      // Convert to base64
       const audioBase64 =
         typeof response.audioContent === "string"
           ? response.audioContent
           : Buffer.from(response.audioContent).toString("base64");
+
+      console.log(
+        `[TTS] Audio generated: ${Math.round(audioBase64.length / 1024)}KB`,
+      );
       return audioBase64;
     }
 
+    console.warn("[TTS] No audio content in response");
     return null;
   } catch (error) {
-    console.error("TTS error:", error.message);
-
-    // If the voice name doesn't exist, try with just languageCode
-    if (
-      error.message?.includes("voice") ||
-      error.message?.includes("not found")
-    ) {
-      try {
-        const client = getClient();
-        const voiceConfig = VOICE_MAP[language] || VOICE_MAP.en;
-
-        const [response] = await client.synthesizeSpeech({
-          input: { text },
-          voice: {
-            languageCode: voiceConfig.languageCode,
-            ssmlGender: voiceConfig.gender,
-          },
-          audioConfig: {
-            audioEncoding: "MP3",
-          },
-        });
-
-        if (response.audioContent) {
-          return typeof response.audioContent === "string"
-            ? response.audioContent
-            : Buffer.from(response.audioContent).toString("base64");
-        }
-      } catch (fallbackErr) {
-        console.error("TTS fallback error:", fallbackErr.message);
-      }
-    }
-
+    console.error("[TTS] Error:", error.code, error.message);
     return null;
   }
-}
-
-/**
- * Escape XML special characters for SSML.
- */
-function escapeXml(str) {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
 }
