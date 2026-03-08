@@ -40,6 +40,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 sign-api/venv
-sign-api
+# sign-api
 
 service-account.json
