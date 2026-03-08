@@ -40,7 +40,7 @@ gcloud run deploy $SERVICE_NAME `
     --min-instances 0 `
     --max-instances 5 `
     --timeout 300 `
-    --set-env-vars "NODE_ENV=production,GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_CLOUD_LOCATION=$REGION" `
+    --set-env-vars "NODE_ENV=production,GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_CLOUD_LOCATION=$REGION,NEXT_PUBLIC_SIGNPULSE_API=https://signpulse-backend-973006952011.us-central1.run.app" `
     --quiet
 
 # Step 4: Get the URL

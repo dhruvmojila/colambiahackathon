@@ -14,9 +14,10 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Build-time env (service account will be mounted at runtime)
+# Build-time env — NEXT_PUBLIC_ vars are baked into client JS during build
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
+ENV NEXT_PUBLIC_SIGNPULSE_API=https://signpulse-backend-973006952011.us-central1.run.app
 
 RUN npm run build
 
@@ -28,6 +29,7 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=8080
 ENV HOSTNAME="0.0.0.0"
+ENV NEXT_PUBLIC_SIGNPULSE_API=https://signpulse-backend-973006952011.us-central1.run.app
 
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
