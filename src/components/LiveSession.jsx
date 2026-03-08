@@ -11,8 +11,9 @@ import {
   Zap,
   Clock,
   AlertCircle,
-  RefreshCw,
   Trash2,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import CameraFeed from "@/components/CameraFeed";
 import TranscriptPanel from "@/components/TranscriptPanel";
@@ -33,12 +34,98 @@ export default function LiveSession() {
   const [elapsed, setElapsed] = useState(0);
   const [framesSent, setFramesSent] = useState(0);
   const [retryCount, setRetryCount] = useState(0);
+  const [audioEnabled, setAudioEnabled] = useState(true);
 
   const sessionIdRef = useRef("session-" + Date.now());
   const processingRef = useRef(false);
+  const audioContextRef = useRef(null);
   const analyserRef = useRef(null);
   const timerRef = useRef(null);
+  const audioQueueRef = useRef([]);
+  const isPlayingRef = useRef(false);
   const maxRetries = 3;
+
+  // Initialize AudioContext on first user interaction
+  const ensureAudioContext = useCallback(() => {
+    if (audioContextRef.current) return audioContextRef.current;
+
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 64;
+    analyser.smoothingTimeConstant = 0.8;
+    analyser.connect(ctx.destination);
+
+    audioContextRef.current = ctx;
+    analyserRef.current = analyser;
+
+    return ctx;
+  }, []);
+
+  // Play base64-encoded MP3 audio
+  const playAudio = useCallback(
+    async (base64Audio) => {
+      if (!audioEnabled) return;
+
+      try {
+        const ctx = ensureAudioContext();
+
+        // Resume if suspended (browser policy)
+        if (ctx.state === "suspended") {
+          await ctx.resume();
+        }
+
+        // Decode base64 to ArrayBuffer
+        const binaryStr = atob(base64Audio);
+        const bytes = new Uint8Array(binaryStr.length);
+        for (let i = 0; i < binaryStr.length; i++) {
+          bytes[i] = binaryStr.charCodeAt(i);
+        }
+
+        const audioBuffer = await ctx.decodeAudioData(bytes.buffer.slice(0));
+
+        // Create source and connect to analyser
+        const source = ctx.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(analyserRef.current);
+
+        setIsAudioPlaying(true);
+        isPlayingRef.current = true;
+
+        source.onended = () => {
+          setIsAudioPlaying(false);
+          isPlayingRef.current = false;
+          // Play next in queue if any
+          processAudioQueue();
+        };
+
+        source.start();
+      } catch (err) {
+        console.error("Audio playback error:", err);
+        setIsAudioPlaying(false);
+        isPlayingRef.current = false;
+        processAudioQueue();
+      }
+    },
+    [audioEnabled, ensureAudioContext],
+  );
+
+  // Queue-based audio playback to avoid overlapping
+  const queueAudio = useCallback(
+    (base64Audio) => {
+      if (!audioEnabled) return;
+      audioQueueRef.current.push(base64Audio);
+      if (!isPlayingRef.current) {
+        processAudioQueue();
+      }
+    },
+    [audioEnabled],
+  );
+
+  const processAudioQueue = useCallback(() => {
+    if (audioQueueRef.current.length === 0) return;
+    const next = audioQueueRef.current.shift();
+    playAudio(next);
+  }, [playAudio]);
 
   // Session timer
   useEffect(() => {
@@ -72,7 +159,7 @@ export default function LiveSession() {
 
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
 
         const res = await fetch("/api/live", {
           method: "POST",
@@ -96,7 +183,7 @@ export default function LiveSession() {
         }
 
         const data = await res.json();
-        setRetryCount(0); // Reset retry on success
+        setRetryCount(0);
         setFramesSent((c) => c + 1);
 
         if (data.results) {
@@ -115,6 +202,9 @@ export default function LiveSession() {
             if (result.type === "environment") {
               setEnvironment(result.environment);
             }
+            if (result.type === "audio" && result.audioData) {
+              queueAudio(result.audioData);
+            }
           }
         }
 
@@ -123,7 +213,7 @@ export default function LiveSession() {
         console.error("Frame analysis error:", err);
 
         if (err.name === "AbortError") {
-          setError("Request timed out. The API is slow — retrying…");
+          setError("Request timed out — retrying…");
         } else {
           setError(err.message || "Failed to analyze frame");
         }
@@ -133,7 +223,7 @@ export default function LiveSession() {
         if (retryCount >= maxRetries) {
           setStatusText("Too many errors — pausing");
           setError(
-            "Multiple failures detected. Check your API credentials and service account.",
+            "Multiple failures. Check API credentials and that Vertex AI + Text-to-Speech APIs are enabled.",
           );
         } else {
           setStatusText("Error — will retry…");
@@ -143,7 +233,7 @@ export default function LiveSession() {
         setIsProcessing(false);
       }
     },
-    [sessionActive, language, retryCount],
+    [sessionActive, language, retryCount, queueAudio],
   );
 
   // Start session
@@ -154,6 +244,10 @@ export default function LiveSession() {
     setError(null);
     setFramesSent(0);
     setRetryCount(0);
+    audioQueueRef.current = [];
+
+    // Initialize audio context on user gesture
+    ensureAudioContext();
 
     try {
       const res = await fetch("/api/live", {
@@ -177,7 +271,7 @@ export default function LiveSession() {
       setError(err.message || "Connection failed. Is the server running?");
       setStatusText("Connection failed");
     }
-  }, [language]);
+  }, [language, ensureAudioContext]);
 
   // End session
   const endSession = useCallback(async () => {
@@ -198,6 +292,8 @@ export default function LiveSession() {
     setStatusText("Session ended");
     setError(null);
     processingRef.current = false;
+    audioQueueRef.current = [];
+    setIsAudioPlaying(false);
   }, []);
 
   // Toggle session
@@ -218,6 +314,15 @@ export default function LiveSession() {
   const dismissError = useCallback(() => {
     setError(null);
     setRetryCount(0);
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (audioContextRef.current) {
+        audioContextRef.current.close().catch(() => {});
+      }
+    };
   }, []);
 
   return (
@@ -254,6 +359,26 @@ export default function LiveSession() {
               </span>
             </div>
           )}
+
+          {/* Audio toggle */}
+          <button
+            onClick={() => setAudioEnabled((v) => !v)}
+            className={`flex items-center gap-1 rounded-full px-2 py-1 transition ${
+              audioEnabled
+                ? "bg-violet-500/15 text-violet-300"
+                : "bg-white/5 text-white/25"
+            }`}
+            title={audioEnabled ? "Mute voice output" : "Enable voice output"}
+          >
+            {audioEnabled ? (
+              <Volume2 className="h-3 w-3" />
+            ) : (
+              <VolumeX className="h-3 w-3" />
+            )}
+            <span className="text-[10px]">
+              {audioEnabled ? "Voice On" : "Muted"}
+            </span>
+          </button>
 
           {/* Connection status */}
           <div className="flex items-center gap-1.5">

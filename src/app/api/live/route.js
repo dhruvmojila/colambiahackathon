@@ -6,6 +6,7 @@
  */
 import { NextResponse } from "next/server";
 import { analyzeFrame, analyzeEnvironmentFromFrame } from "@/lib/gemini-live";
+import { generateSpeech } from "@/lib/tts";
 import { existsSync } from "fs";
 import { resolve } from "path";
 
@@ -59,6 +60,11 @@ export async function POST(request) {
         sessions.set(sessionId, session);
       }
 
+      // Update language if changed mid-session
+      if (language && language !== session.language) {
+        session.language = language;
+      }
+
       session.frameCount++;
       const results = [];
 
@@ -66,7 +72,7 @@ export async function POST(request) {
       const checkEnvironment =
         session.frameCount - session.lastEnvironmentCheck >= 5;
 
-      // Run interpretation and environment analysis
+      // Run interpretation and environment analysis in parallel
       const [interpretation, envResult] = await Promise.all([
         analyzeFrame(
           data,
@@ -118,6 +124,22 @@ export async function POST(request) {
             text: agentResponse.text,
             emotion: agentResponse.emotion,
           });
+
+          // Generate TTS audio for the agent response
+          const audioBase64 = await generateSpeech(
+            agentResponse.text,
+            session.language,
+            agentResponse.emotion,
+          );
+
+          if (audioBase64) {
+            results.push({
+              type: "audio",
+              audioData: audioBase64,
+              mimeType: "audio/mpeg",
+              emotion: agentResponse.emotion,
+            });
+          }
         }
       }
 
@@ -160,7 +182,7 @@ export async function POST(request) {
       error.message?.includes("403")
     ) {
       userMessage =
-        "Service account lacks permissions. Enable Vertex AI API in your GCP project.";
+        "Service account lacks permissions. Enable Vertex AI & Text-to-Speech APIs in GCP.";
       status = 403;
     } else if (
       error.message?.includes("RESOURCE_EXHAUSTED") ||
@@ -173,7 +195,7 @@ export async function POST(request) {
       error.message?.includes("404")
     ) {
       userMessage =
-        "Model not found. Check that Vertex AI is enabled in your GCP project.";
+        "Model or API not found. Enable Vertex AI & Text-to-Speech APIs in GCP.";
       status = 404;
     }
 
@@ -195,30 +217,12 @@ function generateAgentResponse(interpretation, session) {
   // Add environmental context if available
   if (env && env.type) {
     const envContextMap = {
-      hospital: {
-        prefix: "In this medical setting: ",
-        tone: "concerned",
-      },
-      cafe: {
-        prefix: "",
-        tone: "casual",
-      },
-      office: {
-        prefix: "",
-        tone: "professional",
-      },
-      restaurant: {
-        prefix: "",
-        tone: "casual",
-      },
-      school: {
-        prefix: "",
-        tone: "clear",
-      },
-      store: {
-        prefix: "",
-        tone: "helpful",
-      },
+      hospital: { prefix: "In this medical setting: ", tone: "concerned" },
+      cafe: { prefix: "", tone: "casual" },
+      office: { prefix: "", tone: "professional" },
+      restaurant: { prefix: "", tone: "casual" },
+      school: { prefix: "", tone: "clear" },
+      store: { prefix: "", tone: "helpful" },
     };
 
     const ctx = envContextMap[env.type?.toLowerCase()];
@@ -227,8 +231,5 @@ function generateAgentResponse(interpretation, session) {
     }
   }
 
-  return {
-    text,
-    emotion,
-  };
+  return { text, emotion };
 }
