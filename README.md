@@ -1,6 +1,6 @@
 # 🤟 SignPulse AI
 
-![SignPulse Banner](https://img.shields.io/badge/Status-Live_Demo-emerald?style=for-the-badge) ![GCP](https://img.shields.io/badge/Google_Cloud-4285F4?style=for-the-badge&logo=google-cloud&logoColor=white) ![Next.js](https://img.shields.io/badge/Next.js_16-000000?style=for-the-badge&logo=nextdotjs&logoColor=white) ![Gemini](https://img.shields.io/badge/Gemini_3_Flash-1F2937?style=for-the-badge&logo=google&logoColor=white) ![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=FastAPI&logoColor=white)
+![GCP](https://img.shields.io/badge/Google_Cloud-4285F4?style=for-the-badge&logo=google-cloud&logoColor=white) ![Next.js](https://img.shields.io/badge/Next.js_16-000000?style=for-the-badge&logo=nextdotjs&logoColor=white) ![Gemini](https://img.shields.io/badge/Gemini_3_Flash-1F2937?style=for-the-badge&logo=google&logoColor=white) ![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=FastAPI&logoColor=white)
 
 **Live Demo:** [https://signpulse-ai-om4pzzzkja-uc.a.run.app](https://signpulse-ai-om4pzzzkja-uc.a.run.app)  
 _Note: Please grant camera and microphone permissions when testing the application._
@@ -36,61 +36,72 @@ The application runs a unique dual-pipeline constraint:
 3. **Orchestration (Google ADK + Gemini):** Binds the visual frame, the detected ASL intent, and the detected face emotion to provide a highly accurate, human-like interpretation.
 
 ```mermaid
-graph TD
-    %% Styling
-    classDef frontend fill:#0a0a18,stroke:#a78bfa,stroke-width:2px,color:#fff;
-    classDef clientAi fill:#1e1e2f,stroke:#22d3ee,stroke-width:2px,color:#fff;
-    classDef backend fill:#1e1e2f,stroke:#f43f5e,stroke-width:2px,color:#fff;
-    classDef gcp fill:#1e1e2f,stroke:#4ade80,stroke-width:2px,color:#fff;
-    classDef user fill:#2d1b69,stroke:#a78bfa,stroke-width:2px,color:#fff,stroke-dasharray: 5 5;
+flowchart LR
 
-    %% Nodes
-    User(("👤 User\n(Signing & Expressions)")):::user
+%% ================= STYLES =================
+classDef frontend fill:#0a0a18,stroke:#a78bfa,stroke-width:2px,color:#ffffff
+classDef clientAi fill:#1e1e2f,stroke:#22d3ee,stroke-width:2px,color:#ffffff
+classDef backend fill:#1e1e2f,stroke:#f43f5e,stroke-width:2px,color:#ffffff
+classDef gcp fill:#1e1e2f,stroke:#4ade80,stroke-width:2px,color:#ffffff
+classDef user fill:#2d1b69,stroke:#a78bfa,stroke-width:2px,color:#ffffff,stroke-dasharray:6 4
 
-    subgraph "Frontend Engine (Next.js 16)"
-        UI["🖥️ UI Layer\n(React, Tailwind, Three.js)"]:::frontend
-        Camera["📷 Camera Feed\n(WebRTC)"]:::frontend
-    end
+%% ================= USER =================
+User(("👤 User<br>Signing & Expressions")):::user
 
-    subgraph "Client-Side Processing"
-        MediaPipe["🧠 MediaPipe (WASM)\n- Hand Bounding Boxes\n- Face Blendshapes (Emotion)"]:::clientAi
-    end
+%% ================= FRONTEND =================
+subgraph FE["Frontend Engine • Next.js 16 + WebRTC"]
+direction TB
+UI["🖥️ UI Layer<br>React • Tailwind • Three.js"]:::frontend
+Camera["📷 Camera Feed<br>WebRTC"]:::frontend
+end
 
-    subgraph "Sign Detection Microservice"
-        I3D["👐 I3D Model (FastAPI)\n(Pretrained on WLASL-300)"]:::backend
-    end
+%% ================= CLIENT AI =================
+subgraph CLIENT["Client-Side Processing"]
+direction TB
+MediaPipe["🧠 MediaPipe (WASM)<br>Hand Bounding Boxes • Face Blendshapes (Emotion)"]:::clientAi
+end
 
-    subgraph "Google Cloud Platform (GCP)"
-        ADK["🤖 Google ADK\n(Live Agent Orchestration)"]:::gcp
-        Gemini["✨ Gemini 3 Flash\n(Multimodal Vision + Context)"]:::gcp
-        TTS["🗣️ Cloud Text-to-Speech\n(Emotive & Multilingual)"]:::gcp
-    end
+%% ================= BACKEND =================
+subgraph BE["Sign Detection Microservice (FastAPI + Cloud Run)"]
+direction TB
+I3D["👐 I3D Model (PyTorch)<br>Pretrained on WLASL-300"]:::backend
+end
 
-    %% Flow
-    User -->|Video| Camera
-    Camera --> UI
+%% ================= GCP =================
+subgraph CLOUD["Google Cloud Platform (GCP)"]
+direction TB
+ADK["🤖 Google ADK<br>Live Agent Orchestration"]:::gcp
+Gemini["✨ Gemini 3 Flash<br>Multimodal Vision + Context"]:::gcp
+TTS["🗣️ Cloud Text-to-Speech<br>Emotive & Multilingual"]:::gcp
+end
 
-    %% Dual Pipeline Split
-    Camera -->|Frames (~15fps)| MediaPipe
-    Camera -->|2s Video Clips| I3D
-    Camera -->|Keyframes| ADK
 
-    %% Client AI
-    MediaPipe -->|Face Emotion| ADK
-    MediaPipe -->|Visual Overlay| UI
+%% ================= FLOW =================
 
-    %% Sign API
-    I3D -->|Detected ASL Intent| ADK
+User -->|Video| Camera
+Camera --> UI
 
-    %% GCP Orchestration
-    ADK -->|Context (Frames + Sign + Emotion)| Gemini
-    Gemini -->|Translated Text + Detected Emotion| ADK
-    ADK -->|Text + Prosody config| TTS
+Camera -.->|Frames 15fps| MediaPipe
+Camera -.->|2s Video Clips| I3D
+Camera -.->|Keyframes| ADK
 
-    %% Output
-    ADK -->|Live Transcript| UI
-    TTS -->|Synthesized Audio| UI
-    UI -->|Audio + Visual Feedback| User
+MediaPipe -->|Face Emotion| ADK
+MediaPipe -->|Visual Overlay| UI
+
+I3D -->|Detected ASL Intent| ADK
+
+ADK ==> |Context Frames Sign Emotion| Gemini
+Gemini ==> |Translated Text Detected Emotion| ADK
+
+ADK -->|Text Prosody config| TTS
+ADK -->|Live Transcript| UI
+
+TTS ==> |Synthesized Audio| UI
+UI -->|Audio + Visual Feedback| User
+
+
+%% ================= EDGE ANIMATION =================
+linkStyle default stroke-width:2px
 ```
 
 ---
