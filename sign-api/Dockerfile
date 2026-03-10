@@ -36,7 +36,7 @@ COPY . .
 # MODEL_PATH: path to the .pth checkpoint inside the container.
 # If absent, the API starts in DEMO mode (safe for hackathon testing).
 ENV MODEL_PATH="wlasl_model.pth"
-ENV ALLOWED_ORIGINS="http://localhost:3000,http://localhost:3001"
+ENV ALLOWED_ORIGINS="http://localhost:3000,http://localhost:3001,https://signpulse-backend-973006952011.us-central1.run.app,https://signpulse-ai-om4pzzzkja-uc.a.run.app"
 
 # Cloud Run injects PORT automatically; default to 8080
 ENV PORT=8080
